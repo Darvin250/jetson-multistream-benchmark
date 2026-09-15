@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Output directories
+logs/*.csv
+!logs/.gitkeep
+recordings/*.mp4
+!recordings/.gitkeep
+
+# Simulator binary
+mediamtx
+mediamtx.tar.gz
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

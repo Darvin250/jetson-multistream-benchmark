@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NVIDIA Jetson Multi-Stream CCTV Mission Control</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Navigation & Global Telemetry Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-badge">
+          <span class="nvidia-icon">▲</span>
+          <span class="logo-title">JETSON EDGE SURVEILLANCE</span>
+        </div>
+        <div class="platform-chip" id="platform-chip">
+          <span class="chip-dot"></span>
+          <span id="platform-name">NVIDIA Jetson Platform</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="stat-pill">
+          <span class="pill-label">WORKLOAD</span>
+          <span class="pill-value"><strong id="stream-count-text">10</strong> RTSP STREAMS</span>
+        </div>
+        <div class="stat-pill">
+          <span class="pill-label">RECORDING</span>
+          <span class="pill-value recording-pulse"><span class="rec-dot"></span> 10 PASS-THROUGH</span>
+        </div>
+        <div class="stat-pill">
+          <span class="pill-label">FRONTEND DECODE</span>
+          <span class="pill-value">4 LIVE FEEDS (2x2)</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- Interactive Logging Control Button -->
+        <button class="logging-toggle-btn active" id="btn-toggle-logging" title="Click to Stop or Start CSV Telemetry Logging">
+          <span class="btn-rec-dot"></span>
+          <span id="btn-logging-text">STOP LOGGING</span>
+        </button>
+
+        <div class="time-display">
+          <span class="clock-label">SYSTEM CLOCK</span>
+          <span class="clock-val" id="live-clock">--:--:--</span>
+        </div>
+        <div class="uptime-badge">
+          <span class="clock-label">BENCHMARK TIMER</span>
+          <span class="timer-val" id="benchmark-timer">00:00</span>
+        </div>
+        <div class="connection-status connected" id="ws-status" title="WebSocket Telemetry Connected">
+          <span class="ws-dot"></span>
+          <span id="ws-label">LIVE</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Notification Toast Banner -->
+    <div class="toast-banner" id="toast-banner">
+      <span class="toast-icon" id="toast-icon">ℹ️</span>
+      <span class="toast-message" id="toast-msg">Notification</span>
+    </div>
+
+    <!-- Main Workspace: Split into 2x2 Video Grid and Telemetry Panel -->
+    <main class="main-content">
+      
+      <!-- Left Section: 2x2 Video Grid -->
+      <section class="video-section">
+        <div class="section-banner">
+          <div class="banner-title">
+            <span class="banner-icon">📹</span>
+            <h2>LIVE 2x2 MULTI-CAMERA MATRIX</h2>
+            <span class="badge-tag">CLIENT-SIDE DECODE TEST</span>
+          </div>
+          <div class="grid-controls">
+            <span class="fps-indicator">TARGET: 30 FPS</span>
+            <button class="action-btn" id="btn-fullscreen" title="Toggle Fullscreen Matrix">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+              <span>FULLSCREEN</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2x2 Video Tiles -->
+        <div class="camera-grid" id="camera-grid">
+          <!-- Camera 1 -->
+          <div class="camera-card" id="card-cam_01">
+            <div class="card-header">
+              <div class="cam-info">
+                <span class="rec-badge"><span class="rec-dot"></span> REC</span>
+                <span class="cam-name">CAM-01: Front Gate</span>
+              </div>
+              <div class="cam-meta">
+                <span class="meta-item">1080p</span>
+                <span class="meta-item codec-tag">H.264</span>
+                <span class="meta-item">30 FPS</span>
+              </div>
+            </div>
+            <div class="video-wrapper">
+              <img id="stream-cam_01" class="live-stream-feed" src="/api/stream/cam_01" alt="CAM 01 Live Stream" loading="eager">
+              <div class="overlay-watermark">
+                <span class="timestamp-burnin" id="burnin-cam_01">--:--:--</span>
+                <span class="feed-latency">LATENCY: ~160ms</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Camera 2 -->
+          <div class="camera-card" id="card-cam_02">
+            <div class="card-header">
+              <div class="cam-info">
+                <span class="rec-badge"><span class="rec-dot"></span> REC</span>
+                <span class="cam-name">CAM-02: Loading Dock</span>
+              </div>
+              <div class="cam-meta">
+                <span class="meta-item">1080p</span>
+                <span class="meta-item codec-tag">H.264</span>
+                <span class="meta-item">30 FPS</span>
+              </div>
+            </div>
+            <div class="video-wrapper">
+              <img id="stream-cam_02" class="live-stream-feed" src="/api/stream/cam_02" alt="CAM 02 Live Stream" loading="eager">
+              <div class="overlay-watermark">
+                <span class="timestamp-burnin" id="burnin-cam_02">--:--:--</span>
+                <span class="feed-latency">LATENCY: ~170ms</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Camera 3 -->
+          <div class="camera-card" id="card-cam_03">
+            <div class="card-header">
+              <div class="cam-info">
+                <span class="rec-badge"><span class="rec-dot"></span> REC</span>
+                <span class="cam-name">CAM-03: Warehouse A</span>
+              </div>
+              <div class="cam-meta">
+                <span class="meta-item">1080p</span>
+                <span class="meta-item codec-tag">H.264</span>
+                <span class="meta-item">30 FPS</span>
+              </div>
+            </div>
+            <div class="video-wrapper">
+              <img id="stream-cam_03" class="live-stream-feed" src="/api/stream/cam_03" alt="CAM 03 Live Stream" loading="eager">
+              <div class="overlay-watermark">
+                <span class="timestamp-burnin" id="burnin-cam_03">--:--:--</span>
+                <span class="feed-latency">LATENCY: ~165ms</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Camera 4 -->
+          <div class="camera-card" id="card-cam_04">
+            <div class="card-header">
+              <div class="cam-info">
+                <span class="rec-badge"><span class="rec-dot"></span> REC</span>
+                <span class="cam-name">CAM-04: Perimeter East</span>
+              </div>
+              <div class="cam-meta">
+                <span class="meta-item">1080p</span>
+                <span class="meta-item codec-tag">H.264</span>
+                <span class="meta-item">30 FPS</span>
+              </div>
+            </div>
+            <div class="video-wrapper">
+              <img id="stream-cam_04" class="live-stream-feed" src="/api/stream/cam_04" alt="CAM 04 Live Stream" loading="eager">
+              <div class="overlay-watermark">
+                <span class="timestamp-burnin" id="burnin-cam_04">--:--:--</span>
+                <span class="feed-latency">LATENCY: ~180ms</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ingestion Status Bar (All 10 Cameras) -->
+        <div class="all-cameras-strip">
+          <div class="strip-header">
+            <span class="strip-title">10-STREAM CONCURRENT INGESTION & DISK RECORDING STATUS</span>
+            <span class="strip-subtitle">PASS-THROUGH REMUX (.MP4)</span>
+          </div>
+          <div class="cameras-list-grid" id="cameras-status-list">
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 01 (Display+Rec)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 02 (Display+Rec)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 03 (Display+Rec)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 04 (Display+Rec)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 05 (Rec Only)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 06 (Rec Only)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 07 (Rec Only)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 08 (Rec Only)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 09 (Rec Only)</div>
+            <div class="cam-mini-chip active"><span class="chip-status-dot rec"></span> CAM 10 (Rec Only)</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Section: Real-time Hardware Telemetry Dashboard -->
+      <aside class="telemetry-section">
+        <div class="section-banner">
+          <div class="banner-title">
+            <span class="banner-icon">⚡</span>
+            <h2>JETSON HARDWARE VITALS</h2>
+          </div>
+          <span class="live-pill" id="telemetry-source-pill">jtop (jetson-stats)</span>
+        </div>
+
+        <!-- 4 Circular Glowing Hardware Gauges -->
+        <div class="gauges-container">
+          <!-- CPU Gauge -->
+          <div class="gauge-card">
+            <div class="gauge-svg-wrap">
+              <svg viewBox="0 0 100 100" class="gauge-svg">
+                <circle class="gauge-bg" cx="50" cy="50" r="40" />
+                <circle class="gauge-fill" id="gauge-cpu-fill" cx="50" cy="50" r="40" />
+              </svg>
+              <div class="gauge-center-text">
+                <span class="gauge-val" id="val-cpu">0</span><span class="gauge-unit">%</span>
+              </div>
+            </div>
+            <div class="gauge-meta">
+              <span class="gauge-name">CPU LOAD</span>
+              <span class="gauge-sub" id="sub-cpu-cores">8 Cores Online</span>
+            </div>
+          </div>
+
+          <!-- GPU (GR3D) Gauge -->
+          <div class="gauge-card">
+            <div class="gauge-svg-wrap">
+              <svg viewBox="0 0 100 100" class="gauge-svg">
+                <circle class="gauge-bg" cx="50" cy="50" r="40" />
+                <circle class="gauge-fill" id="gauge-gpu-fill" cx="50" cy="50" r="40" />
+              </svg>
+              <div class="gauge-center-text">
+                <span class="gauge-val" id="val-gpu">0</span><span class="gauge-unit">%</span>
+              </div>
+            </div>
+            <div class="gauge-meta">
+              <span class="gauge-name">GPU (GR3D)</span>
+              <span class="gauge-sub">Tegra 3D Engine</span>
+            </div>
+          </div>
+
+          <!-- NVDEC Hardware Decoder Gauge -->
+          <div class="gauge-card highlight-card">
+            <div class="gauge-svg-wrap">
+              <svg viewBox="0 0 100 100" class="gauge-svg">
+                <circle class="gauge-bg" cx="50" cy="50" r="40" />
+                <circle class="gauge-fill nvdec-fill" id="gauge-nvdec-fill" cx="50" cy="50" r="40" />
+              </svg>
+              <div class="gauge-center-text">
+                <span class="gauge-val" id="val-nvdec">0</span><span class="gauge-unit">%</span>
+              </div>
+            </div>
+            <div class="gauge-meta">
+              <span class="gauge-name">NVDEC ENGINE</span>
+              <span class="gauge-sub">HW Video Decoder</span>
+            </div>
+          </div>
+
+          <!-- RAM Gauge -->
+          <div class="gauge-card">
+            <div class="gauge-svg-wrap">
+              <svg viewBox="0 0 100 100" class="gauge-svg">
+                <circle class="gauge-bg" cx="50" cy="50" r="40" />
+                <circle class="gauge-fill" id="gauge-ram-fill" cx="50" cy="50" r="40" />
+              </svg>
+              <div class="gauge-center-text">
+                <span class="gauge-val" id="val-ram">0</span><span class="gauge-unit">%</span>
+              </div>
+            </div>
+            <div class="gauge-meta">
+              <span class="gauge-name">SYSTEM RAM</span>
+              <span class="gauge-sub" id="sub-ram-mb">-- / -- MB</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Time Hardware History Chart (Canvas) -->
+        <div class="chart-card">
+          <div class="card-title-bar">
+            <span class="chart-heading">REAL-TIME LOAD TIMELINE (LAST 60s)</span>
+            <div class="chart-legend">
+              <span class="legend-dot cpu-dot"></span><span>CPU</span>
+              <span class="legend-dot gpu-dot"></span><span>GPU</span>
+              <span class="legend-dot nvdec-dot"></span><span>NVDEC</span>
+              <span class="legend-dot ram-dot"></span><span>RAM</span>
+            </div>
+          </div>
+          <div class="canvas-wrapper">
+            <canvas id="telemetry-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Thermal & Power Meters Grid -->
+        <div class="vitals-matrix">
+          <div class="vital-tile">
+            <div class="vital-icon pwr-icon">⚡</div>
+            <div class="vital-content">
+              <span class="vital-label">POWER DRAW</span>
+              <span class="vital-number" id="val-power">0.0 <span class="v-unit">W</span></span>
+              <span class="vital-sub" id="sub-power-mw">0 mW total</span>
+            </div>
+          </div>
+
+          <div class="vital-tile">
+            <div class="vital-icon temp-icon">🌡️</div>
+            <div class="vital-content">
+              <span class="vital-label">CPU TEMP</span>
+              <span class="vital-number" id="val-temp-cpu">0.0 <span class="v-unit">°C</span></span>
+              <span class="vital-sub" id="sub-temp-status">Normal</span>
+            </div>
+          </div>
+
+          <div class="vital-tile">
+            <div class="vital-icon temp-icon">🔥</div>
+            <div class="vital-content">
+              <span class="vital-label">GPU TEMP</span>
+              <span class="vital-number" id="val-temp-gpu">0.0 <span class="v-unit">°C</span></span>
+              <span class="vital-sub">Tegra Core</span>
+            </div>
+          </div>
+
+          <div class="vital-tile">
+            <div class="vital-icon enc-icon">📼</div>
+            <div class="vital-content">
+              <span class="vital-label">NVENC ENCODER</span>
+              <span class="vital-number" id="val-nvenc">0.0 <span class="v-unit">%</span></span>
+              <span class="vital-sub">0% (Pass-through)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Storage & CSV Log Info with Start/Stop Controls -->
+        <div class="storage-card">
+          <div class="storage-info">
+            <div class="storage-header-row">
+              <span class="storage-title">📁 TELEMETRY LOGGING CSV</span>
+              <span class="log-status-pill active" id="log-status-badge">LOGGING ACTIVE</span>
+            </div>
+            <span class="storage-path" id="val-csv-path">logs/benchmark_*.csv</span>
+          </div>
+          <div class="storage-stats">
+            <span class="samples-count" id="val-samples-count">0 SAMPLES RECORDED</span>
+          </div>
+        </div>
+      </aside>
+
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

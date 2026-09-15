@@ -1,0 +1,97 @@
+{
+  "grid": {
+    "output_width": 1920,
+    "output_height": 1080,
+    "fps": 30
+  },
+  "display_cameras": [
+    {
+      "id": "cam_01",
+      "name": "Front Gate",
+      "url": "rtsp://localhost:8554/cam0",
+      "codec": "h264",
+      "latency_ms": 200,
+      "xpos": 0,
+      "ypos": 0,
+      "width": 960,
+      "height": 540
+    },
+    {
+      "id": "cam_02",
+      "name": "Loading Dock",
+      "url": "rtsp://localhost:8554/cam1",
+      "codec": "h264",
+      "latency_ms": 200,
+      "xpos": 960,
+      "ypos": 0,
+      "width": 960,
+      "height": 540
+    },
+    {
+      "id": "cam_03",
+      "name": "Warehouse A",
+      "url": "rtsp://localhost:8554/cam2",
+      "codec": "h264",
+      "latency_ms": 200,
+      "xpos": 0,
+      "ypos": 540,
+      "width": 960,
+      "height": 540
+    },
+    {
+      "id": "cam_04",
+      "name": "Perimeter East",
+      "url": "rtsp://localhost:8554/cam3",
+      "codec": "h264",
+      "latency_ms": 200,
+      "xpos": 960,
+      "ypos": 540,
+      "width": 960,
+      "height": 540
+    }
+  ],
+  "record_only_cameras": [
+    {
+      "id": "cam_05",
+      "name": "Server Room",
+      "url": "rtsp://localhost:8554/cam4",
+      "codec": "h264",
+      "latency_ms": 200
+    },
+    {
+      "id": "cam_06",
+      "name": "Hallway North",
+      "url": "rtsp://localhost:8554/cam5",
+      "codec": "h264",
+      "latency_ms": 200
+    },
+    {
+      "id": "cam_07",
+      "name": "Parking Lot West",
+      "url": "rtsp://localhost:8554/cam6",
+      "codec": "h264",
+      "latency_ms": 200
+    },
+    {
+      "id": "cam_08",
+      "name": "Reception",
+      "url": "rtsp://localhost:8554/cam7",
+      "codec": "h264",
+      "latency_ms": 200
+    },
+    {
+      "id": "cam_09",
+      "name": "Emergency Exit",
+      "url": "rtsp://localhost:8554/cam8",
+      "codec": "h264",
+      "latency_ms": 200
+    },
+    {
+      "id": "cam_10",
+      "name": "Roof Access",
+      "url": "rtsp://localhost:8554/cam9",
+      "codec": "h264",
+      "latency_ms": 200
+    }
+  ]
+}
