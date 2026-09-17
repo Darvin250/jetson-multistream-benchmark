@@ -99,7 +99,17 @@ jetson-multistream-benchmark/
 
 ## Prerequisites & Installation
 
-### 1. Jetson System Dependencies
+### Option A: One-Step Automated Installation (Recommended)
+Run the automated installer script directly on the Jetson:
+
+```bash
+chmod +x install_dependencies.sh
+./install_dependencies.sh
+```
+
+### Option B: Manual Installation Steps
+
+#### 1. Jetson System Dependencies
 Ensure you are running NVIDIA JetPack with Tegra multimedia packages and Chromium installed:
 
 ```bash
