@@ -293,6 +293,33 @@ document.addEventListener("DOMContentLoaded", () => {
       platformNameEl.textContent = "NVIDIA Jetson (jtop Active)";
     }
 
+    // Dynamic Camera Status Strip updates
+    if (data.camera_status && typeof data.camera_status === "object") {
+      const statusList = document.getElementById("cameras-status-list");
+      if (statusList && statusList.children.length >= 10) {
+        const camKeys = [
+          "cam_01", "cam_02", "cam_03", "cam_04", "cam_05",
+          "cam_06", "cam_07", "cam_08", "cam_09", "cam_10"
+        ];
+        camKeys.forEach((key, idx) => {
+          const chip = statusList.children[idx];
+          if (chip) {
+            const st = data.camera_status[key];
+            const dot = chip.querySelector(".chip-status-dot");
+            if (st === "error" || st === "offline") {
+              chip.classList.remove("active");
+              chip.classList.add("error");
+              if (dot) dot.className = "chip-status-dot offline";
+            } else if (st === "online") {
+              chip.classList.remove("error");
+              chip.classList.add("active");
+              if (dot) dot.className = "chip-status-dot rec";
+            }
+          }
+        });
+      }
+    }
+
     // Append to history buffer
     historyData.cpu.push(cpuPct);
     historyData.gpu.push(gpuPct);

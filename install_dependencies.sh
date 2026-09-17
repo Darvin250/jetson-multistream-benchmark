@@ -35,10 +35,15 @@ echo "==========================================================================
 sudo systemctl restart jtop || true
 
 echo "=============================================================================="
-echo " [*] Setting Execution Permissions on Scripts..."
+echo " [*] Setting Execution Permissions on Scripts & Data Folders..."
 echo "=============================================================================="
 chmod +x "${SCRIPT_DIR}/simulate_streams.sh" "${SCRIPT_DIR}/launch_kiosk.sh" "${SCRIPT_DIR}/benchmark_pipeline.py"
+mkdir -p "${SCRIPT_DIR}/recordings" "${SCRIPT_DIR}/logs"
+chmod -R 777 "${SCRIPT_DIR}/recordings" "${SCRIPT_DIR}/logs" 2>/dev/null || true
+if [ -n "$SUDO_USER" ]; then
+    chown -R "$SUDO_USER:$SUDO_USER" "${SCRIPT_DIR}/recordings" "${SCRIPT_DIR}/logs" 2>/dev/null || true
+fi
 
 echo "=============================================================================="
-echo " [✓] All dependencies installed successfully!"
+echo " [✓] All dependencies and directories configured successfully!"
 echo "=============================================================================="

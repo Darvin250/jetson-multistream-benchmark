@@ -568,6 +568,12 @@ html, body {
   color: #e2e8f0;
 }
 
+.cam-mini-chip.error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+  color: #fca5a5;
+}
+
 .chip-status-dot {
   width: 5px;
   height: 5px;
@@ -578,6 +584,11 @@ html, body {
 .chip-status-dot.rec {
   background: var(--nvidia-green);
   box-shadow: 0 0 5px var(--nvidia-green);
+}
+
+.chip-status-dot.offline {
+  background: #ef4444;
+  box-shadow: 0 0 5px #ef4444;
 }
 
 /* ==============================================================================

@@ -52,12 +52,13 @@ class BenchmarkPipelineBuilder:
         use_hardware_accel: bool = True,
         display_sink: str = "nv3dsink",
         headless: bool = False,
+        enable_recording: bool = True,
     ):
         self.config_path = config_path
-        self.recordings_dir = recordings_dir
         self.use_hardware_accel = use_hardware_accel
         self.display_sink = display_sink
         self.headless = headless
+        self.enable_recording = enable_recording
 
         self.display_cameras: List[CameraStreamConfig] = []
         self.record_only_cameras: List[CameraStreamConfig] = []
@@ -68,7 +69,47 @@ class BenchmarkPipelineBuilder:
         }
 
         self._load_config()
-        os.makedirs(self.recordings_dir, exist_ok=True)
+        self.recordings_dir = self._setup_recordings_dir(recordings_dir)
+
+    def _setup_recordings_dir(self, dir_path: str) -> str:
+        """
+        Verify recordings directory exists, is absolute, and is writable.
+        If permission is denied (e.g. root-owned folder), falls back gracefully.
+        """
+        target_dir = os.path.abspath(dir_path)
+        if not self.enable_recording:
+            return target_dir
+
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            try:
+                os.chmod(target_dir, 0o777)
+            except Exception:
+                pass
+
+            # Pre-flight write verification
+            test_file = os.path.join(target_dir, f".write_test_{os.getpid()}")
+            with open(test_file, "w") as f:
+                f.write("ok")
+            os.remove(test_file)
+            logger.info(f"Verified write access to recordings folder: {target_dir}")
+            return target_dir
+        except (PermissionError, OSError) as e:
+            fallback_dir = os.path.join(os.path.expanduser("~"), "jetson_recordings")
+            try:
+                os.makedirs(fallback_dir, exist_ok=True)
+                logger.warning(
+                    f"Directory '{target_dir}' is not writable ({e}). "
+                    f"Falling back to user home directory: '{fallback_dir}'"
+                )
+                return fallback_dir
+            except Exception:
+                tmp_dir = "/tmp/jetson_recordings"
+                os.makedirs(tmp_dir, exist_ok=True)
+                logger.warning(
+                    f"Falling back to temporary directory: '{tmp_dir}'"
+                )
+                return tmp_dir
 
     def _load_config(self) -> None:
         """Parse cameras.json config file."""
@@ -174,14 +215,21 @@ class BenchmarkPipelineBuilder:
             rec_filename = os.path.join(self.recordings_dir, f"{cam.id}_{session_timestamp}.mp4").replace("\\", "/")
             tee_name = f"tee_{cam.id}"
 
-            branch = (
-                f"rtspsrc location=\"{cam.url}\" latency={cam.latency_ms} drop-on-latency=true protocols=tcp+udp !\n"
-                f"  {depay} ! {parser} ! tee name={tee_name}\n"
-                f"  {tee_name}. ! queue max-size-buffers=120 max-size-time=0 max-size-bytes=0 ! "
-                f"qtmux faststart=true ! filesink location=\"{rec_filename}\"\n"
-                f"  {tee_name}. ! queue max-size-buffers=60 max-size-time=0 max-size-bytes=0 ! "
-                f"{decoder} ! {conv_elem} ! comp.sink_{i}\n"
-            )
+            if self.enable_recording:
+                branch = (
+                    f"rtspsrc location=\"{cam.url}\" latency={cam.latency_ms} drop-on-latency=true protocols=tcp+udp !\n"
+                    f"  {depay} ! {parser} ! tee name={tee_name}\n"
+                    f"  {tee_name}. ! queue max-size-buffers=120 max-size-time=0 max-size-bytes=0 ! "
+                    f"qtmux faststart=true ! filesink location=\"{rec_filename}\"\n"
+                    f"  {tee_name}. ! queue max-size-buffers=60 max-size-time=0 max-size-bytes=0 ! "
+                    f"{decoder} ! {conv_elem} ! comp.sink_{i}\n"
+                )
+            else:
+                branch = (
+                    f"rtspsrc location=\"{cam.url}\" latency={cam.latency_ms} drop-on-latency=true protocols=tcp+udp !\n"
+                    f"  {depay} ! {parser} ! queue max-size-buffers=60 max-size-time=0 max-size-bytes=0 ! "
+                    f"{decoder} ! {conv_elem} ! comp.sink_{i}\n"
+                )
             parts.append(branch)
 
         return "\n".join(parts)
@@ -189,15 +237,20 @@ class BenchmarkPipelineBuilder:
     def generate_record_pipeline_str(self, cam: CameraStreamConfig, session_timestamp: str) -> str:
         """
         Build headless zero-transcode pass-through pipeline string for a single camera:
-        rtspsrc -> rtp<codec>depay -> <codec>parse -> qtmux -> filesink
+        rtspsrc -> rtp<codec>depay -> <codec>parse -> qtmux -> filesink (or fakesink if recording disabled)
         """
         depay, parser, _ = self._get_codec_elements(cam.codec)
         rec_filename = os.path.join(self.recordings_dir, f"{cam.id}_{session_timestamp}.mp4").replace("\\", "/")
 
+        if self.enable_recording:
+            sink_stage = f"qtmux faststart=true ! filesink location=\"{rec_filename}\""
+        else:
+            sink_stage = "fakesink sync=false"
+
         pipeline_str = (
             f"rtspsrc location=\"{cam.url}\" latency={cam.latency_ms} drop-on-latency=true protocols=tcp+udp !\n"
             f"  {depay} ! {parser} ! queue max-size-buffers=120 max-size-time=0 max-size-bytes=0 !\n"
-            f"  qtmux faststart=true ! filesink location=\"{rec_filename}\""
+            f"  {sink_stage}"
         )
         return pipeline_str
 

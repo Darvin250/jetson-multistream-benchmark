@@ -42,7 +42,20 @@ def init_server(monitor: Any, cameras: List[Dict[str, Any]]) -> None:
     """Initialize server state with monitor and camera list."""
     global _monitor_instance, _camera_configs
     _monitor_instance = monitor
-    _camera_configs = cameras
+    _camera_configs = [dict(c) for c in cameras]
+    for c in _camera_configs:
+        c.setdefault("status", "online")
+
+
+def update_camera_status(cam_id: str, status: str, error_msg: Optional[str] = None) -> None:
+    """Update camera health status ('online', 'offline', 'error')."""
+    global _camera_configs
+    for c in _camera_configs:
+        if c.get("id") == cam_id:
+            c["status"] = status
+            if error_msg:
+                c["error"] = error_msg
+            break
 
 
 def update_camera_frame(cam_id: str, jpeg_bytes: bytes) -> None:
@@ -209,6 +222,7 @@ async def websocket_telemetry(websocket: WebSocket):
                 sample["is_logging"] = _monitor_instance.is_logging
                 sample["logged_samples"] = _monitor_instance._logged_samples_count
                 sample["csv_path"] = getattr(_monitor_instance, "output_csv_path", "")
+            sample["camera_status"] = {c["id"]: c.get("status", "online") for c in _camera_configs}
 
             await websocket.send_text(json.dumps(sample))
             await asyncio.sleep(getattr(_monitor_instance, "interval", 1.0))

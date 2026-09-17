@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 # Local module imports
 from src.monitor import HardwareMonitor, HAS_JTOP
 from src.pipeline import BenchmarkPipelineBuilder, HAS_GST
-from src.server import app, init_server
+from src.server import app, init_server, update_camera_status
 
 # Try importing tabulate for formatted report
 try:
@@ -66,6 +66,7 @@ class JetsonBenchmarkRunner:
             use_hardware_accel=not self.args.software_decode,
             display_sink=self.args.sink,
             headless=self.args.headless,
+            enable_recording=not getattr(self.args, "no_record", False),
         )
         self.monitor = HardwareMonitor(
             output_csv_path=self.log_csv_path,
@@ -215,7 +216,7 @@ class JetsonBenchmarkRunner:
         print("=" * 80)
 
     def _bus_call(self, bus: Any, message: Any, pipe_name: str) -> bool:
-        """Handle GStreamer bus messages."""
+        """Handle GStreamer bus messages with per-camera fault isolation."""
         if not HAS_GST:
             return True
 
@@ -230,7 +231,39 @@ class JetsonBenchmarkRunner:
             logger.error(f"[{pipe_name}] GStreamer Error: {err.message}")
             if debug:
                 logger.debug(f"[{pipe_name}] Debug details: {debug}")
-            self.request_stop()
+
+            # If user explicitly specified fatal stop on error, abort
+            if getattr(self.args, "stop_on_error", False):
+                self.request_stop()
+                return True
+
+            # Default resilient behavior: isolate the failing stream so web dashboard stays up
+            if pipe_name.startswith("rec_"):
+                cam_id = pipe_name[4:]
+                logger.warning(
+                    f"[{pipe_name}] Camera stream ({cam_id}) failed: {err.message}. "
+                    f"Isolating pipeline. Other camera streams, telemetry, and web dashboard remain ACTIVE."
+                )
+                for rec in self.pipelines.get("record_only", []):
+                    if rec.get("id") == cam_id:
+                        try:
+                            rec["pipeline"].set_state(Gst.State.NULL)
+                        except Exception:
+                            pass
+                update_camera_status(cam_id, "error", str(err.message))
+            elif pipe_name == "display":
+                logger.warning(
+                    f"[display] Display pipeline encountered an error: {err.message}. "
+                    f"Setting display pipeline to NULL. Web dashboard and telemetry remain ACTIVE."
+                )
+                try:
+                    self.pipelines["display"].set_state(Gst.State.NULL)
+                except Exception:
+                    pass
+                for cam in self.builder.display_cameras:
+                    update_camera_status(cam.id, "error", str(err.message))
+            else:
+                self.request_stop()
         elif t == Gst.MessageType.WARNING:
             warn, debug = message.parse_warning()
             logger.warning(f"[{pipe_name}] GStreamer Warning: {warn.message}")
@@ -512,6 +545,16 @@ def parse_arguments() -> argparse.Namespace:
         "--open-browser",
         action="store_true",
         help="Open dashboard in standard windowed browser"
+    )
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Disable MP4 video recording to disk (run streaming & telemetry without disk writes)"
+    )
+    parser.add_argument(
+        "--stop-on-error",
+        action="store_true",
+        help="Terminate the entire benchmark process immediately if any stream pipeline encounters an error"
     )
     parser.add_argument(
         "--dry-run",
