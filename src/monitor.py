@@ -39,12 +39,14 @@ def _extract_metric_val(val: Any, default: float = 0.0) -> float:
     if isinstance(val, (int, float)):
         return float(val)
     if isinstance(val, dict):
-        # Check standard jtop key names
-        for key in ("temp", "power", "val", "value", "avg", "cur", "current", "total", "load", "active", "speed", "pct", "status"):
+        # Check standard jtop key names (excluding 'cur', 'current', 'freq', 'frq' so clock speeds are never returned)
+        for key in ("temp", "power", "val", "value", "avg", "total", "load", "active", "pct"):
             if key in val and isinstance(val[key], (int, float)) and not isinstance(val[key], bool):
                 return float(val[key])
-        # Search all values recursively for a numeric float/int (excluding bool)
-        for v in val.values():
+        # Search all values recursively for a numeric float/int (excluding clock frequency keys and bools)
+        for k, v in val.items():
+            if str(k).lower() in ("cur", "current", "freq", "frq", "min", "max"):
+                continue  # Skip clock frequency keys in kHz
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 return float(v)
             if isinstance(v, dict):
@@ -56,6 +58,45 @@ def _extract_metric_val(val: Any, default: float = 0.0) -> float:
         return float(val)
     except (ValueError, TypeError):
         return default
+
+
+def _extract_engine_pct(engine_data: Any, stats: Any, aliases: tuple) -> float:
+    """
+    Safely extract NVDEC/NVENC hardware engine utilization percentage (0.0 to 100.0%).
+    Guards against clock frequencies in kHz (e.g. 857600, 793600) being misread as load.
+    """
+    # 1. Check jetson.stats for direct load percentage (0.0 - 100.0)
+    if isinstance(stats, dict):
+        for k in aliases:
+            if k in stats:
+                val = _extract_metric_val(stats[k])
+                # Must be a realistic percentage (0.0 - 100.0), never a kHz frequency step
+                if 0.0 <= val <= 100.0 and val > 0:
+                    return round(val, 2)
+
+    # 2. Check jetson.engine
+    if isinstance(engine_data, dict):
+        for k in aliases:
+            if k in engine_data:
+                ed = engine_data[k]
+                if isinstance(ed, dict):
+                    status = str(ed.get("status", "")).upper().strip()
+                    if status in ("OFF", "0", "FALSE", ""):
+                        return 0.0
+                    # Check for explicit percentage or load key (0.0 - 100.0)
+                    for pkey in ("pct", "load", "val", "value"):
+                        if pkey in ed and isinstance(ed[pkey], (int, float)) and not isinstance(ed[pkey], bool):
+                            pval = float(ed[pkey])
+                            if 0.0 <= pval <= 100.0:
+                                return round(pval, 2)
+                    # If status is explicitly ON, engine is actively engaged
+                    if status in ("ON", "1", "TRUE"):
+                        return 100.0
+                elif isinstance(ed, (int, float)) and not isinstance(ed, bool):
+                    if 0.0 <= ed <= 100.0:
+                        return round(float(ed), 2)
+
+    return 0.0
 
 
 class HardwareMonitor:
@@ -244,48 +285,15 @@ class HardwareMonitor:
                 except Exception:
                     pass
 
-            cpu_cores_str = ";".join(f"{c:.1f}" for c in cpu_cores) if cpu_cores else "0.0"
+            cpu_cores_str = "|".join(f"{c:.1f}" for c in cpu_cores) if cpu_cores else "0.0"
 
             # GPU Engine (GR3D)
             gpu_gr3d = _extract_metric_val(stats.get("GPU", stats.get("gpu", 0.0))) if isinstance(stats, dict) else 0.0
 
-            # NVDEC & NVENC (hardware video decoders/encoders)
-            nvdec = 0.0
-            nvenc = 0.0
-
-            if isinstance(stats, dict):
-                for k in ("NVDEC", "NVDEC0", "NVDEC1", "APE"):
-                    if k in stats:
-                        v = _extract_metric_val(stats[k])
-                        if v > nvdec:
-                            nvdec = v
-                for k in ("NVENC", "NVENC0", "NVENC1", "MSENC"):
-                    if k in stats:
-                        v = _extract_metric_val(stats[k])
-                        if v > nvenc:
-                            nvenc = v
-
-            engine = getattr(jetson, "engine", {})
-            if isinstance(engine, dict):
-                for k in ("NVDEC", "NVDEC0", "NVDEC1"):
-                    if k in engine:
-                        v = _extract_metric_val(engine[k])
-                        if v > nvdec:
-                            nvdec = v
-                for k in ("NVENC", "NVENC0", "NVENC1", "MSENC"):
-                    if k in engine:
-                        v = _extract_metric_val(engine[k])
-                        if v > nvenc:
-                            nvenc = v
-
-            if hasattr(jetson, "nvdec"):
-                v = _extract_metric_val(getattr(jetson, "nvdec"))
-                if v > nvdec:
-                    nvdec = v
-            if hasattr(jetson, "nvenc"):
-                v = _extract_metric_val(getattr(jetson, "nvenc"))
-                if v > nvenc:
-                    nvenc = v
+            # NVDEC & NVENC (hardware video decoders/encoders) - percentage 0.0 to 100.0%
+            engine_data = getattr(jetson, "engine", {})
+            nvdec = _extract_engine_pct(engine_data, stats, ("NVDEC", "NVDEC0", "NVDEC1", "APE"))
+            nvenc = _extract_engine_pct(engine_data, stats, ("NVENC", "NVENC0", "NVENC1", "MSENC"))
 
             # RAM & Swap (MB) - check both jtop casing ('RAM' and 'ram') with psutil fallback
             ram_dict = {}
@@ -379,7 +387,7 @@ class HardwareMonitor:
                 try:
                     cpu_cores = psutil.cpu_percent(interval=None, percpu=True)
                     cpu_avg = psutil.cpu_percent(interval=None)
-                    cpu_cores_str = ";".join(f"{c:.1f}" for c in cpu_cores)
+                    cpu_cores_str = "|".join(f"{c:.1f}" for c in cpu_cores)
                     vm = psutil.virtual_memory()
                     ram_used_mb = vm.used / (1024.0 * 1024.0)
                     ram_tot_mb = vm.total / (1024.0 * 1024.0)

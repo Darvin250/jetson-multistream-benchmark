@@ -254,7 +254,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Cores info
     if (data.cpu_cores_pct && subCpuCoresEl) {
-      const cores = data.cpu_cores_pct.split(";").length;
+      const cores = data.cpu_cores_pct.split(/[;|]/).length;
       subCpuCoresEl.textContent = `${cores} Cores Active`;
     }
 
