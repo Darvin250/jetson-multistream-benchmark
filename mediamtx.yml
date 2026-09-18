@@ -1,0 +1,4 @@
+paths:
+  ~^cam_[0-9]+$:
+    runOnDemand: ffmpeg -re -f lavfi -i "testsrc=size=1280x720:rate=15" -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -flags -global_header -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnDemandRestart: yes
