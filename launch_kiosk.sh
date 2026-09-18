@@ -52,6 +52,8 @@ done
 
 # Launch browser with appropriate flags
 if [[ "$BROWSER_BIN" =~ epiphany ]]; then
+    export WEBKIT_DISABLE_COMPOSITING_MODE=1
+    export WEBKIT_FORCE_SANDBOX=0
     exec $BROWSER_BIN "$DASHBOARD_URL"
 elif [[ "$BROWSER_BIN" =~ firefox ]]; then
     exec $BROWSER_BIN --new-window "$DASHBOARD_URL"

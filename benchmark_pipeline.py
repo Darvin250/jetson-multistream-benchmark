@@ -159,7 +159,10 @@ class JetsonBenchmarkRunner:
 
         for b in browser_bins:
             try:
+                browser_env = env.copy()
                 if b in ("epiphany-browser", "epiphany"):
+                    browser_env["WEBKIT_DISABLE_COMPOSITING_MODE"] = "1"
+                    browser_env["WEBKIT_FORCE_SANDBOX"] = "0"
                     cmd = [b, target_url]
                 elif b == "firefox":
                     cmd = [b, "--new-window", target_url]
@@ -173,7 +176,7 @@ class JetsonBenchmarkRunner:
                     ]
                     if self.args.kiosk:
                         cmd.append("--kiosk")
-                self._browser_process = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self._browser_process = subprocess.Popen(cmd, env=browser_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 logger.info(f"Spawned browser ({b}) pointing to {target_url} (PID: {self._browser_process.pid})")
                 return
             except FileNotFoundError:
