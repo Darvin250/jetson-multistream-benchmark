@@ -32,6 +32,32 @@ except ImportError:
     HAS_PSUTIL = False
 
 
+def _extract_metric_val(val: Any, default: float = 0.0) -> float:
+    """Safely extract a numeric float metric from a raw number or jtop nested dict."""
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, dict):
+        # Check standard jtop key names
+        for key in ("temp", "power", "val", "value", "avg", "cur", "current", "total", "status"):
+            if key in val and isinstance(val[key], (int, float)):
+                return float(val[key])
+        # Search all values recursively for a numeric float/int
+        for v in val.values():
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, dict):
+                res = _extract_metric_val(v, default=None)
+                if res is not None:
+                    return res
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
 class HardwareMonitor:
     """
     Background worker thread logging Jetson hardware metrics to CSV.
@@ -194,55 +220,67 @@ class HardwareMonitor:
             # CPU metrics
             cpu_cores = []
             if isinstance(cpu, dict):
-                cpu_avg = cpu.get("total", 0.0)
+                cpu_avg = _extract_metric_val(cpu.get("total", 0.0))
                 for key in sorted(cpu.keys()):
                     if key.startswith("CPU") and key[3:].isdigit():
-                        cpu_cores.append(f"{cpu[key]:.1f}")
+                        c_val = _extract_metric_val(cpu[key])
+                        cpu_cores.append(f"{c_val:.1f}")
             else:
                 cpu_avg = 0.0
 
             cpu_cores_str = ";".join(cpu_cores) if cpu_cores else "0.0"
 
             # GPU Engine (GR3D)
-            gpu_gr3d = stats.get("GPU", 0.0) if isinstance(stats, dict) else 0.0
+            gpu_gr3d = _extract_metric_val(stats.get("GPU", 0.0)) if isinstance(stats, dict) else 0.0
 
             # NVDEC & NVENC
             nvdec = 0.0
             nvenc = 0.0
             if isinstance(stats, dict):
-                nvdec = stats.get("NVDEC", stats.get("APE", 0.0))
-                nvenc = stats.get("NVENC", 0.0)
-            if hasattr(jetson, "nvdec") and isinstance(jetson.nvdec, (int, float)):
-                nvdec = float(jetson.nvdec)
-            if hasattr(jetson, "nvenc") and isinstance(jetson.nvenc, (int, float)):
-                nvenc = float(jetson.nvenc)
+                nvdec = _extract_metric_val(stats.get("NVDEC", stats.get("APE", 0.0)))
+                nvenc = _extract_metric_val(stats.get("NVENC", 0.0))
+            if hasattr(jetson, "nvdec"):
+                nvdec_attr = getattr(jetson, "nvdec")
+                if nvdec_attr is not None:
+                    nvdec = _extract_metric_val(nvdec_attr, default=nvdec)
+            if hasattr(jetson, "nvenc"):
+                nvenc_attr = getattr(jetson, "nvenc")
+                if nvenc_attr is not None:
+                    nvenc = _extract_metric_val(nvenc_attr, default=nvenc)
 
             # RAM & Swap (MB)
             ram_dict = mem.get("RAM", {}) if isinstance(mem, dict) else {}
-            ram_used = ram_dict.get("used", 0) / 1024.0 if ram_dict.get("used", 0) > 10000 else ram_dict.get("used", 0.0)
-            ram_tot = ram_dict.get("tot", 1) / 1024.0 if ram_dict.get("tot", 1) > 10000 else ram_dict.get("tot", 1.0)
+            ram_used_raw = _extract_metric_val(ram_dict.get("used", 0))
+            ram_tot_raw = _extract_metric_val(ram_dict.get("tot", 1))
+            ram_used = ram_used_raw / 1024.0 if ram_used_raw > 10000 else ram_used_raw
+            ram_tot = ram_tot_raw / 1024.0 if ram_tot_raw > 10000 else ram_tot_raw
             ram_pct = (ram_used / ram_tot * 100.0) if ram_tot > 0 else 0.0
 
             swap_dict = mem.get("SWAP", {}) if isinstance(mem, dict) else {}
-            swap_used = swap_dict.get("used", 0) / 1024.0 if swap_dict.get("used", 0) > 10000 else swap_dict.get("used", 0.0)
+            swap_used_raw = _extract_metric_val(swap_dict.get("used", 0))
+            swap_used = swap_used_raw / 1024.0 if swap_used_raw > 10000 else swap_used_raw
 
             # Power (mW)
             power_mw = 0.0
             if isinstance(power, dict):
-                tot_pwr = power.get("tot", {})
-                if isinstance(tot_pwr, dict):
-                    power_mw = float(tot_pwr.get("power", 0.0))
-                elif isinstance(power.get("total"), (int, float)):
-                    power_mw = float(power.get("total", 0.0))
+                tot_pwr = power.get("tot", power.get("total", {}))
+                power_mw = _extract_metric_val(tot_pwr)
+                if power_mw == 0.0:
+                    # Fallback to sum of power rails or maximum rail
+                    for r_key, r_val in power.items():
+                        if r_key not in ("rail",) and isinstance(r_val, (dict, int, float)):
+                            r_pwr = _extract_metric_val(r_val)
+                            if r_pwr > power_mw:
+                                power_mw = r_pwr
 
             # Temperature (°C)
             temp_cpu = 0.0
             temp_gpu = 0.0
             temp_aux = 0.0
             if isinstance(temp, dict):
-                temp_cpu = float(temp.get("CPU", temp.get("cpu", 0.0)))
-                temp_gpu = float(temp.get("GPU", temp.get("gpu", 0.0)))
-                temp_aux = float(temp.get("AUX", temp.get("thermal", 0.0)))
+                temp_cpu = _extract_metric_val(temp.get("CPU", temp.get("cpu", temp.get("thermal", 0.0))))
+                temp_gpu = _extract_metric_val(temp.get("GPU", temp.get("gpu", 0.0)))
+                temp_aux = _extract_metric_val(temp.get("AUX", temp.get("aux", temp.get("AO", temp.get("board", 0.0)))))
 
             row = {
                 "timestamp": now_iso,

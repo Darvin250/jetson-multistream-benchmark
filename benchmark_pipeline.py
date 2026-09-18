@@ -230,7 +230,7 @@ class JetsonBenchmarkRunner:
             err, debug = message.parse_error()
             logger.error(f"[{pipe_name}] GStreamer Error: {err.message}")
             if debug:
-                logger.debug(f"[{pipe_name}] Debug details: {debug}")
+                logger.warning(f"[{pipe_name}] Error Details: {debug.strip()}")
 
             # If user explicitly specified fatal stop on error, abort
             if getattr(self.args, "stop_on_error", False):
