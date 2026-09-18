@@ -34,18 +34,18 @@ except ImportError:
 
 def _extract_metric_val(val: Any, default: float = 0.0) -> float:
     """Safely extract a numeric float metric from a raw number or jtop nested dict."""
-    if val is None:
+    if val is None or isinstance(val, bool):
         return default
     if isinstance(val, (int, float)):
         return float(val)
     if isinstance(val, dict):
         # Check standard jtop key names
-        for key in ("temp", "power", "val", "value", "avg", "cur", "current", "total", "status"):
-            if key in val and isinstance(val[key], (int, float)):
+        for key in ("temp", "power", "val", "value", "avg", "cur", "current", "total", "load", "active", "speed", "pct", "status"):
+            if key in val and isinstance(val[key], (int, float)) and not isinstance(val[key], bool):
                 return float(val[key])
-        # Search all values recursively for a numeric float/int
+        # Search all values recursively for a numeric float/int (excluding bool)
         for v in val.values():
-            if isinstance(v, (int, float)):
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
                 return float(v)
             if isinstance(v, dict):
                 res = _extract_metric_val(v, default=None)
@@ -220,45 +220,102 @@ class HardwareMonitor:
             # CPU metrics
             cpu_cores = []
             if isinstance(cpu, dict):
-                cpu_avg = _extract_metric_val(cpu.get("total", 0.0))
+                cpu_avg = _extract_metric_val(cpu.get("total", cpu.get("avg", 0.0)))
                 for key in sorted(cpu.keys()):
-                    if key.startswith("CPU") and key[3:].isdigit():
+                    norm_k = key.upper().replace(" ", "").replace("_", "")
+                    if norm_k.startswith("CPU") and norm_k[3:].isdigit():
                         c_val = _extract_metric_val(cpu[key])
-                        cpu_cores.append(f"{c_val:.1f}")
+                        cpu_cores.append(c_val)
             else:
                 cpu_avg = 0.0
 
-            cpu_cores_str = ";".join(cpu_cores) if cpu_cores else "0.0"
+            # If jtop didn't report per-core percentages or all cores are 0.0, use psutil percpu
+            if (not cpu_cores or all(c == 0.0 for c in cpu_cores)) and HAS_PSUTIL:
+                try:
+                    percpu_vals = psutil.cpu_percent(interval=None, percpu=True)
+                    if percpu_vals:
+                        cpu_cores = percpu_vals
+                except Exception:
+                    pass
+
+            if cpu_avg == 0.0 and HAS_PSUTIL:
+                try:
+                    cpu_avg = psutil.cpu_percent(interval=None)
+                except Exception:
+                    pass
+
+            cpu_cores_str = ";".join(f"{c:.1f}" for c in cpu_cores) if cpu_cores else "0.0"
 
             # GPU Engine (GR3D)
-            gpu_gr3d = _extract_metric_val(stats.get("GPU", 0.0)) if isinstance(stats, dict) else 0.0
+            gpu_gr3d = _extract_metric_val(stats.get("GPU", stats.get("gpu", 0.0))) if isinstance(stats, dict) else 0.0
 
-            # NVDEC & NVENC
+            # NVDEC & NVENC (hardware video decoders/encoders)
             nvdec = 0.0
             nvenc = 0.0
+
             if isinstance(stats, dict):
-                nvdec = _extract_metric_val(stats.get("NVDEC", stats.get("APE", 0.0)))
-                nvenc = _extract_metric_val(stats.get("NVENC", 0.0))
+                for k in ("NVDEC", "NVDEC0", "NVDEC1", "APE"):
+                    if k in stats:
+                        v = _extract_metric_val(stats[k])
+                        if v > nvdec:
+                            nvdec = v
+                for k in ("NVENC", "NVENC0", "NVENC1", "MSENC"):
+                    if k in stats:
+                        v = _extract_metric_val(stats[k])
+                        if v > nvenc:
+                            nvenc = v
+
+            engine = getattr(jetson, "engine", {})
+            if isinstance(engine, dict):
+                for k in ("NVDEC", "NVDEC0", "NVDEC1"):
+                    if k in engine:
+                        v = _extract_metric_val(engine[k])
+                        if v > nvdec:
+                            nvdec = v
+                for k in ("NVENC", "NVENC0", "NVENC1", "MSENC"):
+                    if k in engine:
+                        v = _extract_metric_val(engine[k])
+                        if v > nvenc:
+                            nvenc = v
+
             if hasattr(jetson, "nvdec"):
-                nvdec_attr = getattr(jetson, "nvdec")
-                if nvdec_attr is not None:
-                    nvdec = _extract_metric_val(nvdec_attr, default=nvdec)
+                v = _extract_metric_val(getattr(jetson, "nvdec"))
+                if v > nvdec:
+                    nvdec = v
             if hasattr(jetson, "nvenc"):
-                nvenc_attr = getattr(jetson, "nvenc")
-                if nvenc_attr is not None:
-                    nvenc = _extract_metric_val(nvenc_attr, default=nvenc)
+                v = _extract_metric_val(getattr(jetson, "nvenc"))
+                if v > nvenc:
+                    nvenc = v
 
-            # RAM & Swap (MB)
-            ram_dict = mem.get("RAM", {}) if isinstance(mem, dict) else {}
+            # RAM & Swap (MB) - check both jtop casing ('RAM' and 'ram') with psutil fallback
+            ram_dict = {}
+            swap_dict = {}
+            if isinstance(mem, dict):
+                ram_dict = mem.get("RAM", mem.get("ram", {}))
+                swap_dict = mem.get("SWAP", mem.get("swap", {}))
+
             ram_used_raw = _extract_metric_val(ram_dict.get("used", 0))
-            ram_tot_raw = _extract_metric_val(ram_dict.get("tot", 1))
-            ram_used = ram_used_raw / 1024.0 if ram_used_raw > 10000 else ram_used_raw
-            ram_tot = ram_tot_raw / 1024.0 if ram_tot_raw > 10000 else ram_tot_raw
-            ram_pct = (ram_used / ram_tot * 100.0) if ram_tot > 0 else 0.0
+            ram_tot_raw = _extract_metric_val(ram_dict.get("tot", ram_dict.get("total", 0)))
 
-            swap_dict = mem.get("SWAP", {}) if isinstance(mem, dict) else {}
-            swap_used_raw = _extract_metric_val(swap_dict.get("used", 0))
-            swap_used = swap_used_raw / 1024.0 if swap_used_raw > 10000 else swap_used_raw
+            if ram_tot_raw <= 0 or ram_used_raw <= 0:
+                if HAS_PSUTIL:
+                    vm = psutil.virtual_memory()
+                    ram_used = vm.used / (1024.0 * 1024.0)
+                    ram_tot = vm.total / (1024.0 * 1024.0)
+                    ram_pct = vm.percent
+                    swap = psutil.swap_memory()
+                    swap_used = swap.used / (1024.0 * 1024.0)
+                else:
+                    ram_used = 0.0
+                    ram_tot = 1.0
+                    ram_pct = 0.0
+                    swap_used = 0.0
+            else:
+                ram_used = ram_used_raw / 1024.0 if ram_used_raw > 10000 else ram_used_raw
+                ram_tot = ram_tot_raw / 1024.0 if ram_tot_raw > 10000 else ram_tot_raw
+                ram_pct = (ram_used / ram_tot * 100.0) if ram_tot > 0 else 0.0
+                swap_used_raw = _extract_metric_val(swap_dict.get("used", 0))
+                swap_used = swap_used_raw / 1024.0 if swap_used_raw > 10000 else swap_used_raw
 
             # Power (mW)
             power_mw = 0.0
@@ -266,7 +323,6 @@ class HardwareMonitor:
                 tot_pwr = power.get("tot", power.get("total", {}))
                 power_mw = _extract_metric_val(tot_pwr)
                 if power_mw == 0.0:
-                    # Fallback to sum of power rails or maximum rail
                     for r_key, r_val in power.items():
                         if r_key not in ("rail",) and isinstance(r_val, (dict, int, float)):
                             r_pwr = _extract_metric_val(r_val)
