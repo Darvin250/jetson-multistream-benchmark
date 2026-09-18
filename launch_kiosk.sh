@@ -24,9 +24,9 @@ if command -v xset &> /dev/null; then
     xset -dpms 2>/dev/null || true
 fi
 
-# Detect browser binary (chromium-browser, chromium, or google-chrome)
+# Detect browser binary
 BROWSER_BIN=""
-for b in "chromium-browser" "chromium" "google-chrome" "google-chrome-stable"; do
+for b in "chromium-browser" "chromium" "google-chrome" "google-chrome-stable" "epiphany-browser" "epiphany" "firefox"; do
     if command -v "$b" &> /dev/null; then
         BROWSER_BIN="$b"
         break
@@ -34,8 +34,7 @@ for b in "chromium-browser" "chromium" "google-chrome" "google-chrome-stable"; d
 done
 
 if [ -z "$BROWSER_BIN" ]; then
-    echo "[-] No supported Chromium-based browser found on this system."
-    echo "[-] Install Chromium on Jetson with: sudo apt-get install -y chromium-browser"
+    echo "[-] No supported browser (Chromium/Epiphany/Firefox) found on this system."
     exit 1
 fi
 
@@ -51,19 +50,26 @@ for i in {1..15}; do
     sleep 1
 done
 
-# Launch Chromium with hardware-accelerated rendering and kiosk flags
-exec $BROWSER_BIN \
-    --kiosk \
-    --noerrdialogs \
-    --disable-infobars \
-    --disable-session-crashed-bubble \
-    --disable-translate \
-    --check-for-update-interval=31536000 \
-    --autoplay-policy=no-user-gesture-required \
-    --enable-features=VaapiVideoDecoder \
-    --ignore-gpu-blocklist \
-    --enable-gpu-rasterization \
-    --enable-zero-copy \
-    --window-position=0,0 \
-    --window-size=1920,1080 \
-    "$DASHBOARD_URL"
+# Launch browser with appropriate flags
+if [[ "$BROWSER_BIN" =~ epiphany ]]; then
+    exec $BROWSER_BIN "$DASHBOARD_URL"
+elif [[ "$BROWSER_BIN" =~ firefox ]]; then
+    exec $BROWSER_BIN --new-window "$DASHBOARD_URL"
+else
+    # Launch Chromium with hardware-accelerated rendering and kiosk flags
+    exec $BROWSER_BIN \
+        --kiosk \
+        --noerrdialogs \
+        --disable-infobars \
+        --disable-session-crashed-bubble \
+        --disable-translate \
+        --check-for-update-interval=31536000 \
+        --autoplay-policy=no-user-gesture-required \
+        --enable-features=VaapiVideoDecoder \
+        --ignore-gpu-blocklist \
+        --enable-gpu-rasterization \
+        --enable-zero-copy \
+        --window-position=0,0 \
+        --window-size=1920,1080 \
+        "$DASHBOARD_URL"
+fi

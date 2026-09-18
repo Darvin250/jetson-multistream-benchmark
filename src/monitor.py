@@ -251,7 +251,7 @@ class HardwareMonitor:
                 logger.warning("jtop communication lost.")
                 break
 
-            now_iso = datetime.now().isoformat(timespec="milliseconds")
+            now_iso = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             stats = jetson.stats
             cpu = jetson.cpu
             mem = jetson.memory
@@ -374,7 +374,7 @@ class HardwareMonitor:
         """Fallback metrics collector using psutil for non-Jetson/simulated environments."""
         while not self._stop_event.is_set():
             loop_start = time.time()
-            now_iso = datetime.now().isoformat(timespec="milliseconds")
+            now_iso = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             cpu_avg = 0.0
             cpu_cores_str = ""

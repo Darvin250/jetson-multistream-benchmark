@@ -144,29 +144,42 @@ class JetsonBenchmarkRunner:
             except Exception as e:
                 logger.warning(f"Failed to launch kiosk via script: {e}")
 
-        # Fallback direct browser invocation
-        browser_bins = ["chromium-browser", "chromium", "google-chrome", "google-chrome-stable"]
+        # Browser binaries
+        browser_bins = [
+            "chromium-browser",
+            "chromium",
+            "google-chrome",
+            "google-chrome-stable",
+            "epiphany-browser",
+            "epiphany",
+            "firefox"
+        ]
         if os.name == "nt":
             browser_bins = ["chrome", "msedge"]
 
         for b in browser_bins:
             try:
-                cmd = [
-                    b,
-                    f"--app={target_url}",
-                    "--noerrdialogs",
-                    "--disable-infobars",
-                    "--autoplay-policy=no-user-gesture-required",
-                ]
-                if self.args.kiosk:
-                    cmd.append("--kiosk")
+                if b in ("epiphany-browser", "epiphany"):
+                    cmd = [b, target_url]
+                elif b == "firefox":
+                    cmd = [b, "--new-window", target_url]
+                else:
+                    cmd = [
+                        b,
+                        f"--app={target_url}",
+                        "--noerrdialogs",
+                        "--disable-infobars",
+                        "--autoplay-policy=no-user-gesture-required",
+                    ]
+                    if self.args.kiosk:
+                        cmd.append("--kiosk")
                 self._browser_process = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                logger.info(f"Spawned browser kiosk ({b}) pointing to {target_url} (PID: {self._browser_process.pid})")
+                logger.info(f"Spawned browser ({b}) pointing to {target_url} (PID: {self._browser_process.pid})")
                 return
             except FileNotFoundError:
                 continue
 
-        logger.warning("No supported browser (Chromium/Chrome) found to launch kiosk automatically.")
+        logger.warning("No supported browser (Chromium/Chrome/Epiphany/Firefox) found to launch dashboard automatically.")
 
     def _stop_browser_kiosk(self) -> None:
         """Terminate spawned browser kiosk process."""
