@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+import threading
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -37,14 +38,159 @@ _camera_configs: List[Dict[str, Any]] = []
 _active_websockets: List[WebSocket] = []
 _frame_buffers: Dict[str, bytes] = {}
 
+# Check for OpenCV availability
+try:
+    import cv2
+    HAS_CV2 = True
+except ImportError:
+    cv2 = None
+    HAS_CV2 = False
+
+
+class CameraStreamWorker:
+    """
+    Dedicated worker thread capturing live video from an RTSP camera feed via OpenCV.
+    Compresses frames to JPEG and deposits into the shared frame buffer for low-latency web viewing.
+    """
+    def __init__(self, cam_id: str, url: str, target_fps: int = 30, target_width: int = 1280):
+        self.cam_id = cam_id
+        self.url = url
+        self.target_fps = target_fps
+        self.target_width = target_width
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._capture_loop, name=f"RTSPWorker-{self.cam_id}", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.5)
+            self._thread = None
+
+    def _capture_loop(self) -> None:
+        if not HAS_CV2:
+            logger.warning(f"[{self.cam_id}] OpenCV (cv2) not available. Fallback to synthetic frames.")
+            return
+
+        # Sanitize display URL for logging (hide credentials)
+        clean_url = self.url
+        if "@" in clean_url and "://" in clean_url:
+            proto, rest = clean_url.split("://", 1)
+            creds, host = rest.split("@", 1)
+            clean_url = f"{proto}://***:***@{host}"
+
+        logger.info(f"[{self.cam_id}] Starting RTSP capture worker for {clean_url}")
+        retry_delay = 1.0
+
+        while self._running:
+            cap = None
+            try:
+                # Force FFMPEG backend and set buffer size to 1 to eliminate frame queuing latency
+                cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+                if not cap.isOpened():
+                    logger.warning(f"[{self.cam_id}] Could not connect to RTSP stream: {clean_url}")
+                    update_camera_status(self.cam_id, "error", "Failed to connect to RTSP stream")
+                    time.sleep(min(retry_delay, 10.0))
+                    retry_delay *= 1.5
+                    continue
+
+                logger.info(f"[{self.cam_id}] RTSP stream connected successfully.")
+                update_camera_status(self.cam_id, "online")
+                retry_delay = 1.0
+
+                frame_interval = 1.0 / self.target_fps
+                last_frame_time = time.time()
+
+                while self._running:
+                    ret = cap.grab()
+                    if not ret:
+                        logger.warning(f"[{self.cam_id}] Connection lost to {clean_url}. Reconnecting...")
+                        update_camera_status(self.cam_id, "error", "Stream disconnected")
+                        break
+
+                    now = time.time()
+                    if (now - last_frame_time) >= frame_interval:
+                        last_frame_time = now
+                        ret, frame = cap.retrieve()
+                        if ret and frame is not None:
+                            # Scale down if very high resolution to keep web latency ultra-low
+                            h, w = frame.shape[:2]
+                            if w > self.target_width:
+                                scale = self.target_width / float(w)
+                                target_h = int(h * scale)
+                                frame = cv2.resize(frame, (self.target_width, target_h), interpolation=cv2.INTER_LINEAR)
+
+                            # Encode to JPEG
+                            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 75]
+                            ret_enc, buf = cv2.imencode('.jpg', frame, encode_param)
+                            if ret_enc:
+                                update_camera_frame(self.cam_id, buf.tobytes())
+                                update_camera_status(self.cam_id, "online")
+                    else:
+                        time.sleep(0.005)
+
+            except Exception as e:
+                logger.error(f"[{self.cam_id}] RTSP capture worker exception: {e}")
+                update_camera_status(self.cam_id, "error", str(e))
+                time.sleep(2.0)
+            finally:
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+
+
+class StreamCaptureManager:
+    """Manages lifecycle of all camera capture worker threads."""
+    def __init__(self):
+        self._workers: Dict[str, CameraStreamWorker] = {}
+        self._lock = threading.Lock()
+
+    def start_cameras(self, cameras: List[Dict[str, Any]]) -> None:
+        with self._lock:
+            for cam in cameras:
+                cam_id = cam.get("id")
+                url = cam.get("url", "")
+                # Only capture display cameras with valid RTSP or HTTP feeds
+                if not cam_id or not url or not (url.startswith("rtsp://") or url.startswith("http://")):
+                    continue
+                if cam_id not in self._workers:
+                    worker = CameraStreamWorker(cam_id, url)
+                    self._workers[cam_id] = worker
+                    worker.start()
+
+    def stop_all(self) -> None:
+        with self._lock:
+            for worker in self._workers.values():
+                worker.stop()
+            self._workers.clear()
+
+
+_stream_manager = StreamCaptureManager()
+
 
 def init_server(monitor: Any, cameras: List[Dict[str, Any]]) -> None:
-    """Initialize server state with monitor and camera list."""
+    """Initialize server state with monitor and camera list, and spawn capture workers."""
     global _monitor_instance, _camera_configs
     _monitor_instance = monitor
     _camera_configs = [dict(c) for c in cameras]
     for c in _camera_configs:
         c.setdefault("status", "online")
+    _stream_manager.start_cameras(_camera_configs)
+
+
+def stop_all_streams() -> None:
+    """Stop all background RTSP capture workers."""
+    _stream_manager.stop_all()
 
 
 def update_camera_status(cam_id: str, status: str, error_msg: Optional[str] = None) -> None:
@@ -181,19 +327,22 @@ async def video_stream(cam_id: str):
     """
     async def frame_generator():
         frame_idx = 0
-        while True:
-            frame_bytes = _frame_buffers.get(cam_id)
-            if not frame_bytes:
-                frame_bytes = _generate_synthetic_frame(cam_id, frame_idx)
+        try:
+            while True:
+                frame_bytes = _frame_buffers.get(cam_id)
+                if not frame_bytes:
+                    frame_bytes = _generate_synthetic_frame(cam_id, frame_idx)
 
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(frame_bytes)).encode("ascii") + b"\r\n\r\n"
-                + frame_bytes + b"\r\n"
-            )
-            frame_idx += 1
-            await asyncio.sleep(0.033)  # ~30 FPS
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(frame_bytes)).encode("ascii") + b"\r\n\r\n"
+                    + frame_bytes + b"\r\n"
+                )
+                frame_idx += 1
+                await asyncio.sleep(0.033)  # ~30 FPS
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
 
     return StreamingResponse(
         frame_generator(),
@@ -240,3 +389,28 @@ async def websocket_telemetry(websocket: WebSocket):
 web_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "web"))
 if os.path.isdir(web_dir):
     app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
+
+
+@app.on_event("startup")
+def on_startup():
+    """Auto-load cameras from cameras.json if server is launched directly."""
+    global _camera_configs
+    if not _camera_configs:
+        config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config", "cameras.json"))
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    cams = data.get("display_cameras", []) + data.get("record_only_cameras", [])
+                    _camera_configs = cams
+                    _stream_manager.start_cameras(cams)
+                    logger.info(f"Loaded {len(cams)} camera configurations from {config_path} on startup.")
+            except Exception as e:
+                logger.error(f"Failed to load cameras on startup: {e}")
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    """Orderly shutdown of camera capture threads."""
+    stop_all_streams()
+

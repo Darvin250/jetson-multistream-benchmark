@@ -378,14 +378,82 @@ html, body {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-/* 2x2 Grid Layout */
+/* View Mode Toggle Controls */
+.view-mode-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.mode-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.04em;
+}
+
+.mode-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mode-btn.active {
+  background: var(--nvidia-green);
+  color: #070a11;
+  font-weight: 800;
+  box-shadow: 0 0 10px var(--nvidia-green-glow);
+}
+
+.ip-tag {
+  color: var(--nvidia-green);
+  background: rgba(118, 185, 0, 0.12);
+  border: 1px solid rgba(118, 185, 0, 0.25);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* Dynamic Camera Grid Layout */
 .camera-grid {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(2, 1fr);
   gap: 10px;
   min-height: 0;
+  transition: all 0.3s ease;
+}
+
+/* 2-Camera Mode (Wide Dual Split View for Active Hanwha Feeds) */
+.camera-grid.mode-2cam {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: 1fr;
+}
+
+.camera-grid.mode-2cam #card-cam_03,
+.camera-grid.mode-2cam #card-cam_04 {
+  display: none !important;
+}
+
+/* 4-Camera Mode (2x2 Matrix) */
+.camera-grid.mode-4cam {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+}
+
+.camera-grid.mode-4cam #card-cam_03,
+.camera-grid.mode-4cam #card-cam_04 {
+  display: flex !important;
 }
 
 .camera-card {

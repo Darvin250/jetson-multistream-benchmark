@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 # Local module imports
 from src.monitor import HardwareMonitor, HAS_JTOP
 from src.pipeline import BenchmarkPipelineBuilder, HAS_GST
-from src.server import app, init_server, update_camera_status
+from src.server import app, init_server, update_camera_status, stop_all_streams
 
 # Try importing tabulate for formatted report
 try:
@@ -113,7 +113,8 @@ class JetsonBenchmarkRunner:
         time.sleep(0.5)
 
     def _stop_web_server(self) -> None:
-        """Stop background web server."""
+        """Stop background web server and camera capture workers."""
+        stop_all_streams()
         if self._uvicorn_server is not None:
             logger.info("Stopping web dashboard server...")
             self._uvicorn_server.should_exit = True

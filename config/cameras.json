@@ -8,7 +8,7 @@
     {
       "id": "cam_01",
       "name": "Front Gate",
-      "url": "rtsp://localhost:8554/cam0",
+      "url": "rtsp://admin:H@nwha12@192.168.1.100:554/profile2/media.smp",
       "codec": "h264",
       "latency_ms": 200,
       "xpos": 0,
@@ -19,7 +19,7 @@
     {
       "id": "cam_02",
       "name": "Loading Dock",
-      "url": "rtsp://localhost:8554/cam1",
+      "url": "rtsp://admin:H@nwha12@192.168.1.101:554/profile2/media.smp",
       "codec": "h264",
       "latency_ms": 200,
       "xpos": 960,

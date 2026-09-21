@@ -390,6 +390,44 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // View Mode Switcher (2 CAMS vs 4 CAMS)
+  const cameraGrid = document.getElementById("camera-grid");
+  const btnMode2Cam = document.getElementById("btn-mode-2cam");
+  const btnMode4Cam = document.getElementById("btn-mode-4cam");
+  const gridTitle = document.getElementById("grid-title");
+  const gridModeTag = document.getElementById("grid-mode-tag");
+
+  function setGridMode(mode) {
+    if (!cameraGrid) return;
+    if (mode === "2cam") {
+      cameraGrid.classList.add("mode-2cam");
+      cameraGrid.classList.remove("mode-4cam");
+      if (btnMode2Cam) btnMode2Cam.classList.add("active");
+      if (btnMode4Cam) btnMode4Cam.classList.remove("active");
+      if (gridTitle) gridTitle.textContent = "LIVE DUAL-CAMERA FEED (HANWHA)";
+      if (gridModeTag) gridModeTag.textContent = "2 ACTIVE CHANNELS";
+      localStorage.setItem("grid_view_mode", "2cam");
+    } else {
+      cameraGrid.classList.add("mode-4cam");
+      cameraGrid.classList.remove("mode-2cam");
+      if (btnMode2Cam) btnMode2Cam.classList.remove("active");
+      if (btnMode4Cam) btnMode4Cam.classList.add("active");
+      if (gridTitle) gridTitle.textContent = "LIVE 2x2 MULTI-CAMERA MATRIX";
+      if (gridModeTag) gridModeTag.textContent = "4 CHANNELS (2x2)";
+      localStorage.setItem("grid_view_mode", "4cam");
+    }
+  }
+
+  const savedMode = localStorage.getItem("grid_view_mode") || "2cam";
+  setGridMode(savedMode);
+
+  if (btnMode2Cam) {
+    btnMode2Cam.addEventListener("click", () => setGridMode("2cam"));
+  }
+  if (btnMode4Cam) {
+    btnMode4Cam.addEventListener("click", () => setGridMode("4cam"));
+  }
+
   // Stream auto-reconnect fallback
   ["cam_01", "cam_02", "cam_03", "cam_04"].forEach(id => {
     const img = document.getElementById(`stream-${id}`);

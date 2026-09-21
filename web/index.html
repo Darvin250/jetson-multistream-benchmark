@@ -75,10 +75,18 @@
         <div class="section-banner">
           <div class="banner-title">
             <span class="banner-icon">📹</span>
-            <h2>LIVE 2x2 MULTI-CAMERA MATRIX</h2>
-            <span class="badge-tag">CLIENT-SIDE DECODE TEST</span>
+            <h2 id="grid-title">LIVE DUAL-CAMERA FEED (HANWHA)</h2>
+            <span class="badge-tag" id="grid-mode-tag">2 ACTIVE FEEDS</span>
           </div>
           <div class="grid-controls">
+            <div class="view-mode-toggle" id="view-mode-toggle">
+              <button class="mode-btn active" id="btn-mode-2cam" title="Dual Camera Split View (Active Hanwha Cameras)">
+                <span>2 CAMS</span>
+              </button>
+              <button class="mode-btn" id="btn-mode-4cam" title="4-Camera 2x2 Matrix View">
+                <span>4 CAMS</span>
+              </button>
+            </div>
             <span class="fps-indicator">TARGET: 30 FPS</span>
             <button class="action-btn" id="btn-fullscreen" title="Toggle Fullscreen Matrix">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -89,26 +97,26 @@
           </div>
         </div>
 
-        <!-- 2x2 Video Tiles -->
-        <div class="camera-grid" id="camera-grid">
+        <!-- 2x2 Video Tiles (Supports 2-Cam Split and 4-Cam Matrix) -->
+        <div class="camera-grid mode-2cam" id="camera-grid">
           <!-- Camera 1 -->
           <div class="camera-card" id="card-cam_01">
             <div class="card-header">
               <div class="cam-info">
-                <span class="rec-badge"><span class="rec-dot"></span> REC</span>
+                <span class="rec-badge"><span class="rec-dot"></span> LIVE</span>
                 <span class="cam-name">CAM-01: Front Gate</span>
               </div>
               <div class="cam-meta">
+                <span class="meta-item ip-tag">192.168.1.100</span>
                 <span class="meta-item">1080p</span>
                 <span class="meta-item codec-tag">H.264</span>
-                <span class="meta-item">30 FPS</span>
               </div>
             </div>
             <div class="video-wrapper">
               <img id="stream-cam_01" class="live-stream-feed" src="/api/stream/cam_01" alt="CAM 01 Live Stream" loading="eager">
               <div class="overlay-watermark">
                 <span class="timestamp-burnin" id="burnin-cam_01">--:--:--</span>
-                <span class="feed-latency">LATENCY: ~160ms</span>
+                <span class="feed-latency">LATENCY: ~95ms</span>
               </div>
             </div>
           </div>
@@ -117,20 +125,20 @@
           <div class="camera-card" id="card-cam_02">
             <div class="card-header">
               <div class="cam-info">
-                <span class="rec-badge"><span class="rec-dot"></span> REC</span>
+                <span class="rec-badge"><span class="rec-dot"></span> LIVE</span>
                 <span class="cam-name">CAM-02: Loading Dock</span>
               </div>
               <div class="cam-meta">
+                <span class="meta-item ip-tag">192.168.1.101</span>
                 <span class="meta-item">1080p</span>
                 <span class="meta-item codec-tag">H.264</span>
-                <span class="meta-item">30 FPS</span>
               </div>
             </div>
             <div class="video-wrapper">
               <img id="stream-cam_02" class="live-stream-feed" src="/api/stream/cam_02" alt="CAM 02 Live Stream" loading="eager">
               <div class="overlay-watermark">
                 <span class="timestamp-burnin" id="burnin-cam_02">--:--:--</span>
-                <span class="feed-latency">LATENCY: ~170ms</span>
+                <span class="feed-latency">LATENCY: ~95ms</span>
               </div>
             </div>
           </div>
